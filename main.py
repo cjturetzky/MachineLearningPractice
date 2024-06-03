@@ -3,7 +3,19 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
-TF_ENABLE_ONEDNN_OPTS=0
+pd.options.display.max_rows = 10
+pd.options.display.float_format = "{:.1f}".format
+
+train_df = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_train.csv")
+test_df = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_test.csv")
+
+scale_factor = 1000.0
+
+# Scale the training set's label.
+train_df["median_house_value"] /= scale_factor
+
+# Scale the test set's label
+test_df["median_house_value"] /= scale_factor
 
 # @title Define the functions that build and train a model
 def build_model(my_learning_rate):
@@ -28,19 +40,17 @@ def build_model(my_learning_rate):
     return model
 
 
-def train_model(model, feature, label, epochs, batch_size):
-    """Train the model by feeding it data."""
+def train_model(model, df, feature, label, my_epochs,
+                my_batch_size=None, my_validation_split=0.1):
+    """Feed a dataset into the model in order to train it."""
 
-    # Feed the feature values and the label values to the
-    # model. The model will train for the specified number
-    # of epochs, gradually learning how the feature values
-    # relate to the label values.
-    history = model.fit(x=feature,
-                        y=label,
-                        batch_size=batch_size,
-                        epochs=epochs)
+    history = model.fit(x=df[feature],
+                        y=df[label],
+                        batch_size=my_batch_size,
+                        epochs=my_epochs,
+                        validation_split=my_validation_split)
 
-    # Gather the trained model's weight and bias.
+    # Gather the model's trained weight and bias.
     trained_weight = model.get_weights()[0][0]
     trained_bias = model.get_weights()[1]
 
@@ -48,14 +58,11 @@ def train_model(model, feature, label, epochs, batch_size):
     # rest of history.
     epochs = history.epoch
 
-    # Gather the history (a snapshot) of each epoch.
+    # Isolate the root mean squared error for each epoch.
     hist = pd.DataFrame(history.history)
-
-    # Specifically gather the model's root mean
-    # squared error at each epoch.
     rmse = hist["root_mean_squared_error"]
 
-    return trained_weight, trained_bias, epochs, rmse
+    return epochs, rmse, history.history
 
 
 def plot_the_model(trained_weight, trained_bias, feature, label):
@@ -80,30 +87,62 @@ def plot_the_model(trained_weight, trained_bias, feature, label):
   plt.show()
 
 
-def plot_the_loss_curve(epochs, rmse):
+def plot_the_loss_curve(epochs, mae_training, mae_validation):
   """Plot the loss curve, which shows loss vs. epoch."""
 
   plt.figure()
   plt.xlabel("Epoch")
   plt.ylabel("Root Mean Squared Error")
 
-  plt.plot(epochs, rmse, label="Loss")
+  plt.plot(epochs[1:], mae_training[1:], label="Training Loss")
+  plt.plot(epochs[1:], mae_validation[1:], label="Validation Loss")
   plt.legend()
-  plt.ylim([rmse.min()*0.97, rmse.max()])
+
+  # We're not going to plot the first epoch, since the loss on the first epoch
+  # is often substantially greater than the loss for other epochs.
+  merged_mae_lists = mae_training[1:] + mae_validation[1:]
+  highest_loss = max(merged_mae_lists)
+  lowest_loss = min(merged_mae_lists)
+  delta = highest_loss - lowest_loss
+  print(delta)
+
+  top_of_y_axis = highest_loss + (delta * 0.05)
+  bottom_of_y_axis = lowest_loss - (delta * 0.05)
+
+  plt.ylim([bottom_of_y_axis, top_of_y_axis])
   plt.show()
 
 
-feature_table = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
-label_table = np.array([5.0, 8.8,  9.6, 14.2, 18.8, 19.5, 21.4, 26.8, 28.9, 32.0, 33.8, 38.2])
+# The following variables are the hyperparameters.
+learning_rate = 0.08
+epochs = 30
+batch_size = 100
 
-learning_rate = 0.01
-epochs = 10
-batch_size = 12
+# Split the original training set into a reduced training set and a
+# validation set.
+validation_split = 0.2
 
-model = build_model(learning_rate)
-trained_weight, trained_bias, epochs, rmse = train_model(model, feature_table,
-                                                         label_table, epochs,
-                                                         batch_size)
-plot_the_model(trained_weight, trained_bias, feature_table, label_table)
-plot_the_loss_curve(epochs, rmse)
+# Identify the feature and the label.
+my_feature = "median_income"    # the median income on a specific city block.
+my_label = "median_house_value" # the median house value on a specific city block.
+# That is, you're going to create a model that predicts house value based
+# solely on the neighborhood's median income.
+
+# Invoke the functions to build and train the model.
+my_model = build_model(learning_rate)
+
+# Shuffle the training data
+shuffled_train_df = train_df.reindex(np.random.permutation(train_df.index))
+
+epochs, rmse, history = train_model(my_model, shuffled_train_df, my_feature,
+                                    my_label, epochs, batch_size,
+                                    validation_split)
+
+plot_the_loss_curve(epochs, history["root_mean_squared_error"],
+                    history["val_root_mean_squared_error"])
+
+x_test = test_df[my_feature]
+y_test = test_df[my_label]
+
+results = my_model.evaluate(x_test, y_test, batch_size=batch_size)
 
