@@ -114,13 +114,13 @@ def plot_the_loss_curve(epochs, mae_training, mae_validation):
 
 
 # The following variables are the hyperparameters.
-learning_rate = 0.08
-epochs = 30
-batch_size = 100
+learning_rate = 0.03
+epochs = 20
+batch_size = 50
 
 # Split the original training set into a reduced training set and a
 # validation set.
-validation_split = 0.2
+validation_split = 0.3
 
 # Identify the feature and the label.
 my_feature = "median_income"    # the median income on a specific city block.
